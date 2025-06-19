@@ -1,0 +1,1 @@
+# nanaren_strength
