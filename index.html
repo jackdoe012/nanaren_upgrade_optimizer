@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>強化シミュレーター v3.0 </title>
+  <style>
+    body { font-family: sans-serif; padding: 1em; max-width: 720px; margin: auto; }
+    label { display: block; margin-top: 10px; }
+    textarea { width: 100%; height: 300px; margin-top: 1em; }
+    button { margin-top: 1em; padding: 0.5em 1em; }
+    select, input[type="number"], input[type="checkbox"] { margin-left: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>強化シミュレーター v3.0 </h1>
+
+  <label>
+    装飾品レア度:
+    <select id="rarity">
+      <option>★1</option>
+      <option>★2</option>
+      <option>★3</option>
+      <option>★4</option>
+      <option>★5</option>
+      <option>賢者級</option>
+    </select>
+  </label>
+
+  <label>
+    目標 + (1～15):
+    <input type="number" id="target" value="15" min="1" max="15" />
+  </label>
+
+  <label>
+    <input type="checkbox" id="event" />
+    ななの日 (+7%)
+  </label>
+
+  <label>
+    低級素材価格: <input type="number" id="price0" value="1000" />
+  </label>
+  <label>
+    中級素材価格: <input type="number" id="price1" value="1000" />
+  </label>
+  <label>
+    高級素材価格: <input type="number" id="price2" value="1000" />
+  </label>
+
+  <button onclick="runSimulation()">計算</button>
+
+  <textarea id="output" readonly></textarea>
+
+  <script>
+    const RANKS = ["低級", "中級", "高級"];
+    const RARITIES = ["★1", "★2", "★3", "★4", "★5", "賢者級"];
+    const MAX_PLUS = 15;
+    const EVENT_BONUS = 0.07;
+    const MAX_ITER = 400;
+    const CONV_TOL = 1e-10;
+
+    const SUCCESS_TABLE = {
+      "低級": [0.88, 0.83, 0.78, 0.73, 0.68, 0.63, 0.58, 0.53, 0.48, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45],
+      "中級": [0.99, 0.94, 0.89, 0.84, 0.79, 0.74, 0.69, 0.64, 0.59, 0.54, 0.49, 0.45, 0.45, 0.45, 0.45],
+      "高級": [1.00, 1.00, 1.00, 0.95, 0.90, 0.85, 0.80, 0.75, 0.70, 0.65, 0.60, 0.55, 0.50, 0.45, 0.45],
+    };
+
+    const FEE_TABLE = [
+      [100, 50, 25],
+      [400, 200, 100],
+      [1000, 500, 250],
+      [2000, 1000, 500],
+      [3000, 1500, 750],
+      [4000, 2000, 1000],
+    ];
+
+    function successRate(p, rankIdx, event) {
+      let rate = SUCCESS_TABLE[RANKS[rankIdx]][p];
+      if (event) rate += EVENT_BONUS;
+      return Math.max(0.45, Math.min(1.0, rate));
+    }
+
+    function computeValues(target, rarityIdx, prices, event) {
+      const V = Array(target + 1).fill(0);
+      const policy = Array(target).fill(0);
+
+      for (let iter = 0; iter < MAX_ITER; iter++) {
+        let delta = 0;
+        for (let p = target - 1; p >= 0; p--) {
+          let best = Infinity;
+          let bestRank = 0;
+          for (let r = 0; r < 3; r++) {
+            const prob = successRate(p, r, event);
+            const attempt = prices[r] + FEE_TABLE[rarityIdx][r];
+            const cost = attempt + prob * V[p + 1] + (1 - prob) * V[0];
+            if (cost < best) {
+              best = cost;
+              bestRank = r;
+            }
+          }
+          delta = Math.max(delta, Math.abs(best - V[p]));
+          V[p] = best;
+          policy[p] = bestRank;
+        }
+        if (delta < CONV_TOL) break;
+      }
+
+      return { V, policy };
+    }
+
+    function runSimulation() {
+      const rarityIdx = document.getElementById("rarity").selectedIndex;
+      const target = parseInt(document.getElementById("target").value);
+      const event = document.getElementById("event").checked;
+
+      const prices = [0, 1, 2].map(i =>
+        parseInt(document.getElementById("price" + i).value)
+      );
+
+      if (!(1 <= target && target <= MAX_PLUS)) {
+        alert("目標 + は 1～15 の範囲で入力してください");
+        return;
+      }
+
+      if (prices.some(p => p < 0 || isNaN(p))) {
+        alert("素材価格は 0 以上の数値で入力してください");
+        return;
+      }
+
+      const { V, policy } = computeValues(target, rarityIdx, prices, event);
+      const V0 = V[0];
+
+      // 保護の輝き価値計算
+      const protectValue = [];
+      for (let p = 0; p < target; p++) {
+        const r = policy[p];
+        const prob = successRate(p, r, event);
+        protectValue[p] = (1 - prob) * (V0 - V[p]);
+      }
+
+      // 出力生成
+      let out = `▼ 強化コスト (保護なし): ${Math.round(V0).toLocaleString()} rin\n\n`;
+      out += "推奨素材 (保護なし)\n";
+      for (let p = 0; p < target; p++) {
+        out += `(+${p} → +${p + 1}) : ${RANKS[policy[p]]}\n`;
+      }
+
+      out += "\n―― 保護の輝き価値 (1 回あたり rin) ――\n";
+      for (let p = 0; p < target; p++) {
+        out += `(+${p} → +${p + 1}) : ${protectValue[p].toLocaleString()}\n`;
+      }
+
+      document.getElementById("output").value = out;
+    }
+  </script>
+</body>
+</html>
