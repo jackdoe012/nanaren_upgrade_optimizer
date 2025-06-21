@@ -193,7 +193,7 @@ function runHandler() {
     out += "―― 素材数 ――\n";
     for (let k = 0; k < 3; k++) {
       const cost = matExpect[k] * prices[k];
-      out += `${RANKS[k]}: ${matExpect[k].toFixed(2)} 枚 (費用 : ${formatNumber(cost)} rin)\n`;
+      out += `${RANKS[k]}: ${matExpect[k].toFixed(2)} 個 (費用 : ${formatNumber(cost)} rin)\n`;
     }
     out += "\n―― 手数料 ――\n";
     out += `${formatNumber(feeExpect)} rin\n\n`;
