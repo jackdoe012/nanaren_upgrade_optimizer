@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>強化シミュレーター v3.1 (Web版)</title>
+  <title>強化シミュレーター v3.4</title>
   <!-- TailwindCSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col items-center p-4">
-  <h1 class="text-2xl font-bold mb-4">装飾品強化シミュレーター </h1>
+  <h1 class="text-2xl font-bold mb-4">装飾品強化シミュレーター</h1>
 
   <!-- 入力フォーム -->
   <div id="controls" class="w-full max-w-md space-y-3 bg-white shadow rounded-2xl p-4">
@@ -29,7 +29,7 @@
     </div>
     <div class="flex items-center space-x-2">
       <input id="event" type="checkbox" class="h-4 w-4" />
-      <label for="event" class="text-sm">強化イベント (+7%)</label>
+      <label for="event" class="text-sm">ななの日 (+7%)</label>
     </div>
     <div class="grid grid-cols-3 gap-3">
       <div class="col-span-1">
@@ -45,14 +45,16 @@
         <input id="price2" type="number" value="3000" class="mt-1 w-full rounded border-gray-300 px-2" />
       </div>
     </div>
-    <button id="run" class="w-full bg-blue-600 text-white py-2 rounded-xl hover:bg-blue-700 transition">計算</button>
+    <button id="run" type="button" class="w-full bg-blue-600 text-white py-2 rounded-xl hover:bg-blue-700 active:scale-95 transition">計算</button>
   </div>
 
   <!-- 出力エリア -->
   <div id="output" class="w-full max-w-md mt-6 whitespace-pre-wrap bg-white shadow rounded-2xl p-4 text-sm font-mono"></div>
 
 <script>
-// -------------------- 定数 --------------------
+/*--------------------------------------------------------------
+  1.  定数定義
+--------------------------------------------------------------*/
 const RANKS = ["低級","中級","高級"];
 const RARITIES = ["★1","★2","★3","★4","★5","賢者級"];
 const MAX_PLUS = 15;
@@ -73,29 +75,37 @@ const FEE_TABLE = [
   [4000,2000,1000]   // 賢者級
 ];
 
-// -------------------- 成功率 --------------------
+/*--------------------------------------------------------------
+  2.  ユーティリティ関数
+--------------------------------------------------------------*/
+const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
+const formatNumber = n => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
+
 function successRate(p, rankIdx, event) {
   let r = SUCCESS_TABLE[RANKS[rankIdx]][p];
   if (event) r += EVENT_BONUS;
-  return Math.max(0.45, Math.min(1.0, r));
+  return clamp(r, 0.45, 1.0);
 }
 
-// -------------------- 解析解 --------------------
+/*--------------------------------------------------------------
+  3.  DP + 方策反復 + 期待素材数・手数料
+--------------------------------------------------------------*/
 function analyticValues(target, rarityIdx, prices, event) {
-  // 各 p, rank でコスト & 成功率テーブル作成
+  // テーブル準備
   const c_tbl = Array.from({ length: target }, () => prices.map((price, r) => price + FEE_TABLE[rarityIdx][r]));
+  const fee_tbl = Array.from({ length: target }, () => RANKS.map((_, r) => FEE_TABLE[rarityIdx][r]));
   const s_tbl = Array.from({ length: target }, (_, p) => RANKS.map((_, r) => successRate(p, r, event)));
 
-  // 初期方策 (すべて高級)
-  const policy = Array.from({ length: target }, () => 2);
-  const V = Array(target + 1).fill(0); // V[target] = 0
+  // 方策初期値: 高級
+  const policy = Array(target).fill(2);
+  const V = Array(target + 1).fill(0);
 
+  // 価値反復
   let stable = false;
   while (!stable) {
     const A = Array(target + 1).fill(0);
     const B = Array(target + 1).fill(0);
 
-    // 後ろ向きに一次式展開
     for (let p = target - 1; p >= 0; p--) {
       const r = policy[p];
       const s = s_tbl[p][r];
@@ -109,66 +119,109 @@ function analyticValues(target, rarityIdx, prices, event) {
       V[p] = A[p] * V0 + B[p];
     }
 
-    // 方策改善
     stable = true;
     for (let p = target - 1; p >= 0; p--) {
-      let bestRank = policy[p];
-      let bestCost = c_tbl[p][bestRank] + s_tbl[p][bestRank] * V[p + 1] + (1 - s_tbl[p][bestRank]) * V0;
+      let best = policy[p];
+      let bestCost = Infinity;
       for (let r = 0; r < 3; r++) {
         const cost = c_tbl[p][r] + s_tbl[p][r] * V[p + 1] + (1 - s_tbl[p][r]) * V0;
         if (cost < bestCost - 1e-12) {
           bestCost = cost;
-          bestRank = r;
+          best = r;
         }
       }
-      if (bestRank !== policy[p]) {
-        policy[p] = bestRank;
+      if (best !== policy[p]) {
+        policy[p] = best;
         stable = false;
       }
     }
   }
-  return { V, policy };
-}
 
-// -------------------- UIロジック --------------------
-function formatNumber(n) {
-  return n.toLocaleString("en-US", { maximumFractionDigits: 1 });
-}
+  // 期待素材数 & 手数料
+  const a_mat = Array.from({ length: 3 }, () => Array(target + 1).fill(0));
+  const b_mat = Array.from({ length: 3 }, () => Array(target + 1).fill(0));
+  const a_fee = Array(target + 1).fill(0);
+  const b_fee = Array(target + 1).fill(0);
 
-document.getElementById("run").addEventListener("click", () => {
-  // 入力取得
-  const rarityIdx = RARITIES.indexOf(document.getElementById("rarity").value);
-  const target = parseInt(document.getElementById("target").value, 10);
-  if (!(1 <= target && target <= MAX_PLUS)) {
-    alert("目標 + は 1 〜 15 で入力してください。");
-    return;
-  }
-  const event = document.getElementById("event").checked;
-  const prices = [0, 1, 2].map(i => parseInt(document.getElementById(`price${i}`).value, 10));
-  if (prices.some(p => p < 0 || isNaN(p))) {
-    alert("素材価格は 0 以上の数値で入力してください。");
-    return;
+  for (let p = target - 1; p >= 0; p--) {
+    const r = policy[p];
+    const s = s_tbl[p][r];
+    // 手数料部分
+    a_fee[p] = (1 - s) + s * a_fee[p + 1];
+    b_fee[p] = fee_tbl[p][r] + s * b_fee[p + 1];
+    // 素材数部分
+    for (let k = 0; k < 3; k++) {
+      a_mat[k][p] = (1 - s) + s * a_mat[k][p + 1];
+      b_mat[k][p] = (k === r ? 1 : 0) + s * b_mat[k][p + 1];
+    }
   }
 
-  // 計算
-  const { V, policy } = analyticValues(target, rarityIdx, prices, event);
   const V0 = V[0];
-  const protectValue = Array.from({ length: target }, (_, p) => {
-    const s = successRate(p, policy[p], event);
-    return (1 - s) * (V0 - V[p]);
-  });
+  const feeExpect = b_fee[0] / (1 - a_fee[0]);
+  const matExpect = Array(3).fill(0).map((_, k) => b_mat[k][0] / (1 - a_mat[k][0]));
 
-  // 出力整形
-  let out = `▼ 強化費用 (保護なし): ${formatNumber(V0)} rin\n\n`;
-  out += "推奨素材 (保護なし)\n";
-  for (let p = 0; p < target; p++) {
-    out += `(+${p} → +${p + 1}) : ${RANKS[policy[p]]}\n`;
+  return { V, policy, matExpect, feeExpect };
+}
+
+/*--------------------------------------------------------------
+  4.  イベントハンドラ
+--------------------------------------------------------------*/
+function runHandler() {
+  const runBtn = document.getElementById("run");
+  runBtn.disabled = true;
+  try {
+    const rarityIdx = RARITIES.indexOf(document.getElementById("rarity").value);
+    const target = parseInt(document.getElementById("target").value, 10);
+    if (!Number.isInteger(target) || target < 1 || target > MAX_PLUS) {
+      alert("目標 + は 1 〜 15 の整数で入力してください。");
+      return;
+    }
+    const eventFlag = document.getElementById("event").checked;
+    const prices = [0, 1, 2].map(i => parseInt(document.getElementById(`price${i}`).value, 10));
+    if (prices.some(p => !Number.isFinite(p) || p < 0)) {
+      alert("素材価格は 0 以上の数値で入力してください。");
+      return;
+    }
+
+    const { V, policy, matExpect, feeExpect } = analyticValues(target, rarityIdx, prices, eventFlag);
+    const V0 = V[0];
+    const protectValue = Array.from({ length: target }, (_, p) => (1 - successRate(p, policy[p], eventFlag)) * (V0 - V[p]));
+
+    // 出力構築
+    let out = `▼ 強化コスト (保護なし): ${formatNumber(V0)} rin\n\n`;
+
+    out += "―― 素材数 ――\n";
+    for (let k = 0; k < 3; k++) {
+      const cost = matExpect[k] * prices[k];
+      out += `${RANKS[k]}: ${matExpect[k].toFixed(2)} 枚 (費用 : ${formatNumber(cost)} rin)\n`;
+    }
+    out += "\n―― 手数料 ――\n";
+    out += `${formatNumber(feeExpect)} rin\n\n`;
+
+    out += "―― 推奨素材 (保護なし) ――\n";
+    for (let p = 0; p < target; p++) {
+      out += `(+${p} → +${p + 1}) : ${RANKS[policy[p]]}\n`;
+    }
+
+    out += "\n―― 保護の輝き価値 ――\n";
+    for (let p = 0; p < target; p++) {
+      out += `(+${p} → +${p + 1}) : ${formatNumber(protectValue[p])}rin\n`;
+    }
+
+    document.getElementById("output").textContent = out;
+  } finally {
+    setTimeout(() => {
+      document.getElementById("run").disabled = false;
+    }, 200);
   }
-  out += "\n―― 保護の輝き価値 (1 回あたり rin) ――\n";
-  for (let p = 0; p < target; p++) {
-    out += `(+${p} → +${p + 1}) : ${formatNumber(protectValue[p])}\n`;
-  }
-  document.getElementById("output").textContent = out;
+}
+
+// click & touchstart for better mobile responsiveness
+const runBtn = document.getElementById("run");
+runBtn.addEventListener("click", runHandler);
+runBtn.addEventListener("touchstart", e => {
+  e.preventDefault();
+  runHandler();
 });
 </script>
 </body>
