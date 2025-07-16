@@ -4,321 +4,506 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>【ななれん】装飾品強化シミュレーター v3.4</title>
+
   <!-- TailwindCSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col items-center p-4">
   <h1 class="text-2xl font-bold mb-4">装飾品強化シミュレーター v3.4</h1>
 
-  <!-- 入力フォーム -->
+  <!-- =====================
+       入力フォーム
+  ====================== -->
   <div id="controls" class="w-full max-w-md space-y-3 bg-white shadow rounded-2xl p-4">
+    <!-- レア度選択 -->
     <div>
       <label class="block text-sm font-medium">装飾品レア度</label>
       <select id="rarity" class="mt-1 w-full rounded border-gray-300">
-        <option>★1</option>
-        <option>★2</option>
-        <option>★3</option>
-        <option>★4</option>
-        <option>★5</option>
-        <option>賢者級</option>
+        <option>★1</option><option>★2</option><option>★3</option>
+        <option>★4</option><option>★5</option><option>賢者級</option>
       </select>
     </div>
+
+    <!-- 目標 + 値 -->
     <div>
       <label class="block text-sm font-medium">目標 + (1–15)</label>
-      <input id="target" type="number" min="1" max="15" value="15" class="mt-1 w-full rounded border-gray-300 px-2" />
+      <input id="target" type="number" min="1" max="15" value="15"
+             class="mt-1 w-full rounded border-gray-300 px-2" />
+    </div>
+
+    <!-- ボーナスチェックボックス -->
+    <div class="flex items-center space-x-2">
+      <input id="event"   type="checkbox" class="h-4 w-4" />
+      <label for="event"  class="text-sm">ななの日 (+7%)</label>
     </div>
     <div class="flex items-center space-x-2">
-      <input id="event" type="checkbox" class="h-4 w-4" />
-      <label for="event" class="text-sm">ななの日 (+7%)</label>
+      <input id="support" type="checkbox" class="h-4 w-4" />
+      <label for="support" class="text-sm">錬金サポートパス (+7%)</label>
     </div>
+
+    <!-- 素材価格 -->
     <div class="grid grid-cols-3 gap-3">
-      <div class="col-span-1">
+      <div>
         <label class="block text-sm font-medium">低級素材価格</label>
-        <input id="price0" type="number" value="1000" class="mt-1 w-full rounded border-gray-300 px-2" />
+        <input id="price0" type="number" value="1000"
+               class="mt-1 w-full rounded border-gray-300 px-2" />
       </div>
-      <div class="col-span-1">
+      <div>
         <label class="block text-sm font-medium">中級素材価格</label>
-        <input id="price1" type="number" value="2000" class="mt-1 w-full rounded border-gray-300 px-2" />
+        <input id="price1" type="number" value="2000"
+               class="mt-1 w-full rounded border-gray-300 px-2" />
       </div>
-      <div class="col-span-1">
+      <div>
         <label class="block text-sm font-medium">高級素材価格</label>
-        <input id="price2" type="number" value="3000" class="mt-1 w-full rounded border-gray-300 px-2" />
+        <input id="price2" type="number" value="3000"
+               class="mt-1 w-full rounded border-gray-300 px-2" />
       </div>
     </div>
+
+    <!-- 高級素材使用上限 -->
     <div>
-      <label class="block text-sm font-medium">高級素材使用数上限 <br><span class="text-xs text-gray-500">空欄→無制限, 0→高級素材不使用</span></label>
-      <input id="limit" type="number" min="0" placeholder="無制限" class="mt-1 w-full rounded border-gray-300 px-2" />
+      <label class="block text-sm font-medium">
+        高級素材使用数上限<br>
+        <span class="text-xs text-gray-500">空欄→無制限, 0→高級素材不使用</span>
+      </label>
+      <input id="limit" type="number" min="0" placeholder="無制限"
+             class="mt-1 w-full rounded border-gray-300 px-2" />
     </div>
-    <button id="run" type="button" class="w-full bg-blue-600 text-white py-2 rounded-xl hover:bg-blue-700 active:scale-95 transition">計算</button>
+
+    <!-- 実行ボタン -->
+    <button id="run" type="button"
+      class="w-full bg-blue-600 text-white py-2 rounded-xl hover:bg-blue-700 active:scale-95 transition">
+      計算
+    </button>
   </div>
 
-  <!-- 出力エリア -->
-  <div id="output" class="w-full max-w-md mt-6 whitespace-pre-wrap bg-white shadow rounded-2xl p-4 text-sm font-mono"></div>
+  <!-- =====================
+       出力エリア
+  ====================== -->
+  <div id="output"
+       class="w-full max-w-md mt-6 whitespace-pre-wrap bg-white shadow rounded-2xl p-4 text-sm font-mono">
+  </div>
 
 <script>
-/*--------------------------------------------------------------
-  1.  定数定義
---------------------------------------------------------------*/
-const RANKS = ["低級","中級","高級"];
-const RARITIES = ["★1","★2","★3","★4","★5","賢者級"];
-const MAX_PLUS = 15;
-const EVENT_BONUS = 0.07;
+/*----------------------------------------------------------------
+  1. 定数定義
+----------------------------------------------------------------*/
+const RANKS        = ["低級","中級","高級"];
+const RARITIES     = ["★1","★2","★3","★4","★5","賢者級"];
+const MAX_PLUS     = 15;
+const EVENT_BONUS  = 0.07;   // +7% ボーナス
 
+// 成功率テーブル (+1〜+15 対応)
 const SUCCESS_TABLE = {
   "低級": [0.88,0.83,0.78,0.73,0.68,0.63,0.58,0.53,0.48,0.43,0.38,0.33,0.28,0.23,0.18],
   "中級": [0.99,0.94,0.89,0.84,0.79,0.74,0.69,0.64,0.59,0.54,0.49,0.44,0.39,0.34,0.29],
   "高級": [1.00,1.00,1.00,0.95,0.90,0.85,0.80,0.75,0.70,0.65,0.60,0.55,0.50,0.45,0.40]
 };
 
+// 手数料テーブル [rarityIdx][rankIdx]
 const FEE_TABLE = [
-  [100,  50,  25],
-  [400,  200, 100],
-  [1000, 500, 250],
-  [2000,1000, 500],
-  [3000,1500, 750],
-  [4000,2000,1000]
+  [100,  50,  25],   // ★1
+  [400,  200, 100],  // ★2
+  [1000, 500, 250],  // ★3
+  [2000,1000, 500],  // ★4
+  [3000,1500, 750],  // ★5
+  [4000,2000,1000]   // 賢者級
 ];
 
-const clamp = (v,min,max)=>Math.min(max,Math.max(min,v));
+// ユーティリティ
+const clamp        = (v,min,max)=>Math.min(max,Math.max(min,v));
 const formatNumber = n => n.toLocaleString("en-US", {maximumFractionDigits:1});
 
-function successRate(p, rankIdx, eventFlag){
+/**
+ * successRate
+ * ------------------------------------------------------------
+ * 指定の + 値 (p) と素材ランク (rankIdx) に対し、
+ * ボーナス回数 (eventCount) を考慮した成功率を返す。
+ */
+function successRate(p, rankIdx, eventCount){
   let r = SUCCESS_TABLE[RANKS[rankIdx]][p];
-  if(eventFlag) r += EVENT_BONUS;
-  return clamp(r,0.45,1.0);
+  r += eventCount * EVENT_BONUS;          // ボーナス加算
+  return clamp(r,0.45,1.0);              // 下限45%, 上限100%
 }
 
-/*--------------------------------------------------------------
-  2.  無制限解析 (Howard 方策反復 + A/B 解析)
---------------------------------------------------------------*/
-function analyticValues(target, rarityIdx, prices, eventFlag){
+/*----------------------------------------------------------------
+  2. 無制限解析 (Howard 方策反復 + A/B 解析)
+----------------------------------------------------------------*/
+/**
+ * analyticValues
+ * ------------------------------------------------------------
+ * ・高級素材無制限時の最適方策と期待コストを Howard 方策反復で求める
+ * ・得られた方策に基づいて素材期待数・手数料を A/B 法で計算
+ */
+function analyticValues(target, rarityIdx, prices, eventCount){
+  // --- 前処理 -------------------------------------------------
+  // cTbl[p][rank] … 各強化段階 p でそのランクを選ぶときの「素材＋手数料」コスト
   const cTbl = Array.from({length:target},()=>prices.map((p,r)=>p+FEE_TABLE[rarityIdx][r]));
-  const sTbl = Array.from({length:target},(_,p)=>RANKS.map((_,r)=>successRate(p,r,eventFlag)));
+  // sTbl[p][rank] … 成功率
+  const sTbl = Array.from({length:target},(_,p)=>RANKS.map((_,r)=>successRate(p,r,eventCount)));
+  // feeTbl は手数料だけを抜き出したテーブル
   const feeTbl = Array.from({length:target},()=>RANKS.map((_,r)=>FEE_TABLE[rarityIdx][r]));
-  const policy = Array(target).fill(2); // 初期 高級
-  const V = Array(target+1).fill(0);
+
+  // 初期方策: 全段階「高級」(2)
+  const policy = Array(target).fill(2);
+  const V = Array(target+1).fill(0);     // 状態価値関数
+
+  // --- Howard 方策反復ループ ---------------------------------
   let stable=false;
   while(!stable){
-    // 評価
+    /* 1) 方策評価フェーズ
+       A[p] … p 段階で強化失敗した場合の (1-s)
+       B[p] … p 段階でのコスト
+       方策が固定なので末尾から動的計画で評価
+    */
     const A = Array(target+1).fill(0);
     const B = Array(target+1).fill(0);
     for(let p=target-1;p>=0;p--){
       const r=policy[p];
       const s=sTbl[p][r];
       const c=cTbl[p][r];
-      A[p]=(1-s)+s*A[p+1];
-      B[p]=c+s*B[p+1];
+      A[p] = (1-s) + s*A[p+1];
+      B[p] = c     + s*B[p+1];
     }
-    const V0 = B[0]/(1-A[0]);
-    for(let p=target-1;p>=0;p--) V[p]=A[p]*V0+B[p];
+    // V0 はスタート状態 (p=0) の期待コスト
+    const V0 = B[0] / (1 - A[0]);
+    for(let p=target-1;p>=0;p--) V[p] = A[p]*V0 + B[p];
 
-    // 改善
+    /* 2) 方策改善フェーズ
+       各段階 p で 3 つのランクを全探索し、
+       期待コストが最小のランクに置き換える。
+    */
     stable=true;
     for(let p=target-1;p>=0;p--){
       let best=policy[p], bestCost=1e30;
       for(let r=0;r<3;r++){
-        const cost=cTbl[p][r]+sTbl[p][r]*V[p+1]+(1-sTbl[p][r])*V0;
-        if(cost<bestCost-1e-12){bestCost=cost;best=r;}
+        const cost = cTbl[p][r] + sTbl[p][r]*V[p+1] + (1-sTbl[p][r])*V0;
+        if(cost < bestCost - 1e-12){
+          bestCost = cost;
+          best     = r;
+        }
       }
-      if(best!==policy[p]){policy[p]=best;stable=false;}
+      if(best !== policy[p]){ policy[p] = best; stable=false; }
     }
-  }
-  // 期待素材数 & 手数料 (A/B 法)
-  const matExp=[0,0,0];
-  const feeExpObj={val:0};
-  function expectations(item){
-    const a=Array(target+1).fill(0);
-    const b=Array(target+1).fill(0);
-    for(let p=target-1;p>=0;p--){
-      const r=policy[p];
-      const s=sTbl[p][r];
-      const inc=item==='fee'?feeTbl[p][r]:(item==='low'&&r===0||item==='mid'&&r===1||item==='high'&&r===2?1:0);
-      a[p]=(1-s)+s*a[p+1];
-      b[p]=inc+s*b[p+1];
-    }
-    return b[0]/(1-a[0]);
-  }
-  matExp[0]=expectations('low');
-  matExp[1]=expectations('mid');
-  matExp[2]=expectations('high');
-  feeExpObj.val=expectations('fee');
+  } // while(!stable)
 
-  return {V, policy, matExp, feeExp:feeExpObj.val};
+  // --- A/B 法で素材・手数料の期待値を厳密算出 -------------------
+  const matExp = [0,0,0];      // 素材期待個数
+  let feeExp   = 0;            // 手数料期待値
+
+  /**
+   * expectations
+   * ------------------------------------------------------------
+   * item = 'low'|'mid'|'high'|'fee'
+   * A/B 法で期待値 (素材個数 or 手数料) を計算
+   */
+  function expectations(item){
+    const a = Array(target+1).fill(0);
+    const b = Array(target+1).fill(0);
+    for(let p=target-1;p>=0;p--){
+      const r = policy[p];
+      const s = sTbl[p][r];
+      const inc =
+        (item === 'fee')  ? feeTbl[p][r] :
+        (item === 'low'  && r===0) ? 1 :
+        (item === 'mid'  && r===1) ? 1 :
+        (item === 'high' && r===2) ? 1 : 0;
+      a[p] = (1-s) + s*a[p+1];
+      b[p] = inc   + s*b[p+1];
+    }
+    return b[0] / (1 - a[0]);
+  }
+  matExp[0] = expectations('low');
+  matExp[1] = expectations('mid');
+  matExp[2] = expectations('high');
+  feeExp    = expectations('fee');
+
+  // 結果を返却
+  return {V, policy, matExp, feeExp};
 }
 
-function protectValues(target, policy, V, eventFlag){
+/**
+ * protectValues
+ * ------------------------------------------------------------
+ * 「保護の輝き」の価値を計算
+ * (失敗した場合に元に戻されるコスト差分)
+ */
+function protectValues(target, policy, V, eventCount){
   return policy.map((r,p)=>{
-    const s=successRate(p,r,eventFlag);
-    return (1-s)*(V[0]-V[p]);
+    const s = successRate(p, r, eventCount);
+    return (1-s) * (V[0] - V[p]);   // 失敗確率 × 差分コスト
   });
 }
 
-/*--------------------------------------------------------------
-  3.  高級上限付き解析 (H<=15)  — 2D Howard 方策反復
---------------------------------------------------------------*/
-function analyticValuesConstrained(target, rarityIdx, prices, eventFlag, highLimit){
-  if(highLimit===null||highLimit===undefined){
-    const {V,policy,matExp,feeExp}=analyticValues(target,rarityIdx,prices,eventFlag);
-    const prot=protectValues(target,policy,V,eventFlag);
+/*----------------------------------------------------------------
+  3. 高級上限付き解析 (H<=15) — 2D Howard 方策反復
+----------------------------------------------------------------*/
+/**
+ * analyticValuesConstrained
+ * ------------------------------------------------------------
+ * 高級素材使用数上限 (highLimit) を考慮した最適方策を求める。
+ * highLimit===null → 無制限
+ * highLimit===0    → 高級素材禁止
+ */
+function analyticValuesConstrained(target, rarityIdx, prices, eventCount, highLimit){
+  // ---------- 無制限 or 禁止 は既存関数で処理 ----------
+  if(highLimit===null || highLimit===undefined){
+    const {V,policy,matExp,feeExp}=analyticValues(target,rarityIdx,prices,eventCount);
+    const prot = protectValues(target,policy,V,eventCount);
     return {V0:V[0], rankSeq:policy, matExp, feeExp, protectList:prot};
   }
-  const S=target;
-  const H=highLimit;
+  /*============================================================
+    ここから上限付き (0 < H <= 15) の 2D 方策反復
+    状態 (p, h)  : 強化段階 p, 残り高級素材 h
+    方策表 policy[p][h]  : 0=低級, 1=中級, 2=高級
+  ============================================================*/
+  const S=target;            // 段階数
+  const H=highLimit;         // 上限 (≦15)
   const pricesPlus=prices.map((p,r)=>p+FEE_TABLE[rarityIdx][r]);
-  const succ=Array.from({length:S},(_,p)=>RANKS.map((_,r)=>successRate(p,r,eventFlag)));
-  // 初期方策: 全て低級(0)
-  const policy=Array.from({length:S},()=>Array(H+1).fill(0));
-  const V=Array.from({length:S+1},()=>Array(H+1).fill(0));
-  const V0=Array(H+1).fill(0);
-  // Howard iterations
-  for(let iter=0;iter<40;iter++){
-    // 評価
-    for(let h=0;h<=H;h++){
+  const succ=Array.from({length:S},(_,p)=>RANKS.map((_,r)=>successRate(p,r,eventCount)));
+
+  // 初期方策: 全て低級 (0)
+  const policy = Array.from({length:S},()=>Array(H+1).fill(0));
+  const V      = Array.from({length:S+1},()=>Array(H+1).fill(0));
+  const V0     = Array(H+1).fill(0);
+
+  // ------- Howard iteration (最大40回で打ち切り) -------
+  for(let iter=0; iter<40; iter++){
+    /* 方策評価 */
+    for(let h=0; h<=H; h++){
       const A=Array(S+1).fill(0);
       const B=Array(S+1).fill(0);
-      for(let p=S-1;p>=0;p--){
-        const r=policy[p][h];
-        const s=succ[p][r];
-        const h2=(r===2&&h>0)?h-1:h;
-        if(h2===h){
-          A[p]=(1-s)+s*A[p+1];
-          B[p]=pricesPlus[r]+s*B[p+1];
+      for(let p=S-1; p>=0; p--){
+        const r = policy[p][h];
+        const s = succ[p][r];
+        const h2 = (r===2 && h>0) ? h-1 : h;   // 高級使用で h 減少
+        if(h2 === h){
+          // 状態が (p+1, h) に遷移
+          A[p] = (1-s) + s*A[p+1];
+          B[p] = pricesPlus[r] + s*B[p+1];
         }else{
-          // cross transition uses already computed V
-          A[p]=0;
-          B[p]=pricesPlus[r]+s*V[p+1][h2]+(1-s)*V0[h2];
+          // 状態が (p+1, h-1) へ (既に評価済み)
+          A[p] = 0;
+          B[p] = pricesPlus[r] + s*V[p+1][h2] + (1-s)*V0[h2];
         }
       }
-      V0[h]=B[0]/(1-A[0]);
-      for(let p=S-1;p>=0;p--){
-        V[p][h]=(A[p]!==0)?A[p]*V0[h]+B[p]:B[p];
+      V0[h] = B[0] / (1 - A[0]);
+      for(let p=S-1; p>=0; p--){
+        V[p][h] = (A[p] !== 0) ? A[p]*V0[h] + B[p] : B[p];
       }
     }
-    // 政策改善
-    let stable=true;
-    for(let p=0;p<S;p++){
-      for(let h=0;h<=H;h++){
-        let best=policy[p][h];
-        let bestCost=1e30;
-        for(let r=0;r<3;r++){
-          if(r===2&&h===0)continue; // no high left
-          const s=succ[p][r];
-          const h2=(r===2&&h>0)?h-1:h;
-          const cost=pricesPlus[r]+s*V[p+1][h2]+(1-s)*V0[h2];
-          if(cost<bestCost-1e-12){bestCost=cost;best=r;}
+
+    /* 方策改善 */
+    let stable = true;
+    for(let p=0; p<S; p++){
+      for(let h=0; h<=H; h++){
+        let best     = policy[p][h];
+        let bestCost = 1e30;
+        for(let r=0; r<3; r++){
+          if(r===2 && h===0) continue;        // 高級なし
+          const s  = succ[p][r];
+          const h2 = (r===2 && h>0) ? h-1 : h;
+          const cost = pricesPlus[r] + s*V[p+1][h2] + (1-s)*V0[h2];
+          if(cost < bestCost - 1e-12){ bestCost = cost; best = r; }
         }
-        if(best!==policy[p][h]){policy[p][h]=best;stable=false;}
+        if(best !== policy[p][h]){ policy[p][h] = best; stable = false; }
       }
     }
-    if(stable)break;
+    if(stable) break; // 収束
   }
-  // ---- 期待素材数 & 手数料 (反復法) ----
+
+  // ------- 期待素材数・手数料 (反復解法) -------
   function expectCounts(item){
     const E=Array.from({length:S+1},()=>Array(H+1).fill(0));
     let diff;
     do{
       diff=0;
-      for(let p=S-1;p>=0;p--){
-        for(let h=0;h<=H;h++){
-          const r=policy[p][h];
-          const s=succ[p][r];
-          const h2=(r===2&&h>0)?h-1:h;
-          const inc=item==='fee'?FEE_TABLE[rarityIdx][r]:((item==='low'&&r===0)||(item==='mid'&&r===1)||(item==='high'&&r===2)?1:0);
-          const newVal=inc+s*E[p+1][h2]+(1-s)*E[0][h2];
-          diff=Math.max(diff,Math.abs(newVal-E[p][h]));
-          E[p][h]=newVal;
+      for(let p=S-1; p>=0; p--){
+        for(let h=0; h<=H; h++){
+          const r  = policy[p][h];
+          const s  = succ[p][r];
+          const h2 = (r===2 && h>0) ? h-1 : h;
+          const inc =
+            (item === 'fee')  ? FEE_TABLE[rarityIdx][r] :
+            (item === 'low'  && r===0) ? 1 :
+            (item === 'mid'  && r===1) ? 1 :
+            (item === 'high' && r===2) ? 1 : 0;
+          const newVal = inc + s*E[p+1][h2] + (1-s)*E[0][h2];
+          diff = Math.max(diff, Math.abs(newVal - E[p][h]));
+          E[p][h] = newVal;
         }
       }
-    }while(diff>1e-10);
+    }while(diff > 1e-10);
     return E[0][H];
   }
-  const matExp=[expectCounts('low'),expectCounts('mid'),expectCounts('high')];
-  const feeExp=expectCounts('fee');
-  // ---- protect values along nominal path ----
-  const protectList=[];
-  let p=0,h=H;
+  const matExp = [
+    expectCounts('low'),
+    expectCounts('mid'),
+    expectCounts('high')
+  ];
+  const feeExp = expectCounts('fee');
+
+  // ------- 方策経路に沿った「保護価値」算出 -------
+  const protectList = [];
+  let p=0, h=H;
   while(p<S){
-    const r=policy[p][h];
-    const s=succ[p][r];
-    protectList.push((1-s)*(V0[h]-V[p][h]));
-    if(r===2&&h>0)h--;
+    const r = policy[p][h];
+    const s = succ[p][r];
+    protectList.push( (1-s) * (V0[h] - V[p][h]) );
+    if(r===2 && h>0) h--;
     p++;
   }
-  // rankSeq along success-only path
-  const rankSeq=[]; p=0; h=H;
+
+  // 成功のみを想定した素材ランク列 (rankSeq) を作成
+  const rankSeq = [];
+  p=0; h=H;
   while(p<S){
-    const r=policy[p][h];
+    const r = policy[p][h];
     rankSeq.push(r);
-    if(r===2&&h>0)h--; p++;
+    if(r===2 && h>0) h--;
+    p++;
   }
+
   return {V0:V0[H], rankSeq, matExp, feeExp, protectList};
 }
 
-/*--------------------------------------------------------------
-  4.  UI ハンドラ
---------------------------------------------------------------*/
+/*----------------------------------------------------------------
+  4. UI ハンドラ
+----------------------------------------------------------------*/
+/**
+ * renderScenario
+ * ------------------------------------------------------------
+ * - 計算結果オブジェクト obj を読み取り
+ * - 人が読みやすい文字列を生成
+ * - showCost=true の時はコスト詳細も表示
+ */
 function renderScenario(title, showCost, obj, prices){
-  const {V0, rankSeq, matExp, feeExp, protectList}=obj;
-  let out=`---- ${title} ----\n`;
+  const {V0, rankSeq, matExp, feeExp, protectList} = obj;
+
+  let out = `---- ${title} ----\n`;
+
   if(showCost){
-    out+=`強化コスト (保護なし): ${formatNumber(V0)} rin\n\n`;
-    out+="―― 素材数 ――\n";
-    for(let k=0;k<3;k++){
-      const cost=matExp[k]*prices[k];
-      out+=`${RANKS[k]}: ${matExp[k].toFixed(2)} 個 (費用: ${formatNumber(cost)} rin)\n`;
+    out += `強化コスト (保護なし): ${formatNumber(V0)} rin\n\n`;
+
+    // 素材内訳
+    out += "―― 素材数 ――\n";
+    for(let k=0; k<3; k++){
+      const cost = matExp[k] * prices[k];
+      out += `${RANKS[k]}: ${matExp[k].toFixed(2)} 個 (費用: ${formatNumber(cost)} rin)\n`;
     }
-    out+=`\n手数料: ${formatNumber(feeExp)} rin\n\n`;
+    out += `\n手数料: ${formatNumber(feeExp)} rin\n\n`;
   }
-  out+="―― 推奨素材 ――\n";
-  rankSeq.forEach((r,p)=>{out+=`(+${p} → +${p+1}) : ${RANKS[r]}\n`;});
-  out+="\n―― 保護の輝きの価値 (rin) ――\n";
-  protectList.forEach((v,p)=>{out+=`(+${p} → +${p+1}) : ${formatNumber(v)}\n`;});
-  out+="\n\n";
+
+  // 推奨素材ランク
+  out += "―― 推奨素材 ――\n";
+  rankSeq.forEach( (r,p) =>{
+    out += `(+${p} → +${p+1}) : ${RANKS[r]}\n`;
+  });
+
+  // 保護の価値
+  out += "\n―― 保護の輝きの価値 (rin) ――\n";
+  protectList.forEach( (v,p) =>{
+    out += `(+${p} → +${p+1}) : ${formatNumber(v)}\n`;
+  });
+  out += "\n\n";
   return out;
 }
 
+/**
+ * runHandler
+ * ------------------------------------------------------------
+ * 「計算」ボタン押下時のメイン処理
+ * - 入力値バリデーション
+ * - 解析実行
+ * - 出力エリアに結果を描画
+ */
 function runHandler(){
-  const runBtn=document.getElementById("run");
-  runBtn.disabled=true;
+  const runBtn = document.getElementById("run");
+  runBtn.disabled = true;           // 二重クリック防止
+
   try{
-    const rarityIdx=RARITIES.indexOf(document.getElementById("rarity").value);
-    const target=parseInt(document.getElementById("target").value,10);
-    if(!Number.isInteger(target)||target<1||target>MAX_PLUS){alert("目標 + は 1-15 で入力してください。");return;}
-    const eventFlag=document.getElementById("event").checked;
-    const prices=[0,1,2].map(i=>parseInt(document.getElementById(`price${i}`).value,10));
-    if(prices.some(p=>!Number.isFinite(p)||p<0)){alert("素材価格は 0 以上で入力してください。");return;}
-    const limitRaw=document.getElementById("limit").value.trim();
-    let highLimit=null;
-    if(limitRaw!==""){
-      if(!/^[0-9]+$/.test(limitRaw)){alert("高級素材上限は整数で入力してください。");return;}
-      highLimit=parseInt(limitRaw,10);
+    /* --------- 入力値取得・バリデーション --------- */
+    const rarityIdx = RARITIES.indexOf(document.getElementById("rarity").value);
+
+    // 目標 +n
+    const target = parseInt(document.getElementById("target").value, 10);
+    if(!Number.isInteger(target) || target < 1 || target > MAX_PLUS){
+      alert("目標 + は 1-15 で入力してください。"); return;
     }
 
-    const scenarios=[];
-    if(highLimit===null){
-      const obj=analyticValuesConstrained(target,rarityIdx,prices,eventFlag,null);
-      scenarios.push({title:"高級素材無制限",showCost:true,obj});
-    }else if(highLimit===0){
-      const obj=analyticValuesConstrained(target,rarityIdx,prices,eventFlag,0);
-      scenarios.push({title:"高級素材不使用",showCost:true,obj});
+    // イベント／サポートボーナス
+    const eventFlag   = document.getElementById("event").checked;
+    const supportFlag = document.getElementById("support").checked;
+    const eventCount  = (eventFlag   ? 1 : 0) +
+                        (supportFlag ? 1 : 0);
+
+    // 素材価格
+    const prices = [0,1,2].map(i =>
+      parseInt(document.getElementById(`price${i}`).value, 10)
+    );
+    if(prices.some(p => !Number.isFinite(p) || p < 0)){
+      alert("素材価格は 0 以上で入力してください。"); return;
+    }
+
+    // 高級素材上限
+    const limitRaw = document.getElementById("limit").value.trim();
+    let highLimit  = null;
+    if(limitRaw !== ""){
+      if(!/^[0-9]+$/.test(limitRaw)){
+        alert("高級素材上限は整数で入力してください。"); return;
+      }
+      highLimit = parseInt(limitRaw,10);
+    }
+
+    /* --------- 解析実行 --------- */
+    const scenarios = [];
+    if(highLimit === null){
+      // 無制限
+      const obj = analyticValuesConstrained(
+                    target, rarityIdx, prices, eventCount, null);
+      scenarios.push({title:"高級素材無制限", showCost:true, obj});
+    }else if(highLimit === 0){
+      // 高級素材不使用
+      const obj = analyticValuesConstrained(
+                    target, rarityIdx, prices, eventCount, 0);
+      scenarios.push({title:"高級素材不使用", showCost:true, obj});
     }else{
-      const objLimit=analyticValuesConstrained(target,rarityIdx,prices,eventFlag,highLimit);
-      scenarios.push({title:`高級素材使用 (上限 ${highLimit} 個)`,showCost:true,obj:objLimit});
-      const objNoHigh=analyticValuesConstrained(target,rarityIdx,prices,eventFlag,0);
-      scenarios.push({title:"高級素材不使用",showCost:false,obj:objNoHigh});
+      // 上限あり / なし の 2 パターン併記
+      const objLimit = analyticValuesConstrained(
+                         target, rarityIdx, prices, eventCount, highLimit);
+      scenarios.push({
+        title:`高級素材使用 (上限 ${highLimit} 個)`,
+        showCost:true, obj:objLimit
+      });
+      // 比較用: 高級素材ゼロ
+      const objNoHigh = analyticValuesConstrained(
+                          target, rarityIdx, prices, eventCount, 0);
+      scenarios.push({
+        title:"高級素材不使用",
+        showCost:false, obj:objNoHigh
+      });
     }
 
+    /* --------- 出力描画 --------- */
     let out="";
-    scenarios.forEach(s=>{out+=renderScenario(s.title,s.showCost,s.obj,prices);});
-    document.getElementById("output").textContent=out;
+    scenarios.forEach(s => {
+      out += renderScenario(s.title, s.showCost, s.obj, prices);
+    });
+    document.getElementById("output").textContent = out;
+
   }finally{
-    setTimeout(()=>{runBtn.disabled=false;},200);
+    setTimeout(()=>{ runBtn.disabled=false; }, 200);
   }
 }
 
-const runBtn=document.getElementById("run");
-runBtn.addEventListener("click",runHandler);
-runBtn.addEventListener("touchstart",e=>{e.preventDefault();runHandler();});
+/*--------------------------------------------------------------
+  5. イベントリスナー登録
+--------------------------------------------------------------*/
+const runBtn = document.getElementById("run");
+runBtn.addEventListener("click",        runHandler);
+runBtn.addEventListener("touchstart", e=>{
+  e.preventDefault(); runHandler();
+});
 </script>
 </body>
 </html>
